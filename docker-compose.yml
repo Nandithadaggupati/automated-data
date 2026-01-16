@@ -1,25 +1,26 @@
-version: "3.9"
-
 services:
   localstack:
-    image: localstack/localstack:latest
+    image: localstack/localstack
     container_name: localstack
     ports:
       - "4566:4566"
     environment:
       - SERVICES=s3
-      - DEBUG=1
-      - DEFAULT_REGION=us-east-1
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock"
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
 
   etl:
     build: ./app
+    container_name: etl
     depends_on:
       - localstack
     environment:
       - BUCKET_NAME=etl-demo-bucket
       - RAW_KEY=raw/raw_data.csv
       - PROCESSED_KEY=processed/processed_data.csv
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
       - AWS_REGION=us-east-1
-      - ENDPOINT_URL=http://localstack:4566
+      - LOCALSTACK_HOST=localstack
+      - LOCALSTACK_PORT=4566
