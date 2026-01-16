@@ -1,0 +1,82 @@
+name: CI LocalStack ETL
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+jobs:
+  etl-pipeline:
+    runs-on: ubuntu-latest
+
+    services:
+      localstack:
+        image: localstack/localstack:latest
+        ports:
+          - 4566:4566
+        env:
+          SERVICES: s3
+          DEBUG: "1"
+          DEFAULT_REGION: us-east-1
+        options: >-
+          --health-cmd="curl -f http://localhost:4566/_localstack/health || exit 1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      BUCKET_NAME: etl-demo-bucket
+      RAW_KEY: raw/raw_data.csv
+      PROCESSED_KEY: processed/processed_data.csv
+      LOCALSTACK_ENDPOINT: http://localhost:4566
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Terraform init
+        working-directory: ./terraform
+        run: terraform init
+
+      - name: Terraform validate
+        working-directory: ./terraform
+        run: terraform validate
+
+      - name: Terraform apply
+        working-directory: ./terraform
+        run: terraform apply -auto-approve
+
+      - name: Install AWS CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y awscli
+
+      - name: Upload raw CSV to S3
+        run: |
+          aws --endpoint-url=${LOCALSTACK_ENDPOINT} s3 mb s3://${BUCKET_NAME} || true
+          aws --endpoint-url=${LOCALSTACK_ENDPOINT} s3 cp raw_data.csv s3://${BUCKET_NAME}/${RAW_KEY}
+
+      - name: Build ETL image
+        run: docker build -t etl-app ./app
+
+      - name: Run ETL container
+        run: |
+          docker run --network host \
+            -e BUCKET_NAME=${BUCKET_NAME} \
+            -e RAW_KEY=${RAW_KEY} \
+            -e PROCESSED_KEY=${PROCESSED_KEY} \
+            -e AWS_REGION=${AWS_REGION} \
+            -e ENDPOINT_URL=${LOCALSTACK_ENDPOINT} \
+            etl-app
+
+      - name: Verify processed file exists
+        run: |
+          aws --endpoint-url=${LOCALSTACK_ENDPOINT} s3 ls s3://${BUCKET_NAME}/${PROCESSED_KEY}
