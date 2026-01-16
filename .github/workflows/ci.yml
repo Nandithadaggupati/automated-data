@@ -30,51 +30,52 @@ jobs:
           --health-cmd="curl -f http://localhost:4566/health || exit 1"
           --health-interval=10s
           --health-timeout=5s
-          --health-retries=5
+          --health-retries=10
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Wait for LocalStack
         run: |
-          for i in {1..20}; do
-            if curl -s http://localhost:4566/health | grep '"s3": "running"'; then
-              echo "LocalStack ready"
-              exit 0
+          echo "Waiting for LocalStack to be ready..."
+          for i in {1..30}; do
+            if curl -s $LOCALSTACK_ENDPOINT/health | grep '"s3": "running"'; then
+              echo "LocalStack S3 is ready!"
+              break
             fi
             sleep 3
           done
-          exit 1
 
-      - name: Configure AWS
+      - name: Configure AWS CLI
         run: |
           aws configure set aws_access_key_id test
           aws configure set aws_secret_access_key test
           aws configure set region us-east-1
 
-      - name: Create bucket
+      - name: Create S3 bucket
         run: |
-          aws --endpoint-url=http://localhost:4566 s3 mb s3://etl-demo-bucket
+          aws --endpoint-url=$LOCALSTACK_ENDPOINT s3 mb s3://$BUCKET_NAME
 
       - name: Upload raw data
         run: |
-          aws --endpoint-url=http://localhost:4566 s3 cp raw_data.csv s3://etl-demo-bucket/raw/raw_data.csv
+          aws --endpoint-url=$LOCALSTACK_ENDPOINT s3 cp raw_data.csv s3://$BUCKET_NAME/$RAW_KEY
 
-      - name: Build ETL image
+      - name: Build ETL Docker image
         run: docker build -t etl-image .
 
-      - name: Run ETL
+      - name: Run ETL container
         run: |
           docker run --rm \
             -e AWS_ACCESS_KEY_ID=test \
             -e AWS_SECRET_ACCESS_KEY=test \
             -e AWS_DEFAULT_REGION=us-east-1 \
-            -e BUCKET_NAME=etl-demo-bucket \
-            -e RAW_KEY=raw/raw_data.csv \
-            -e PROCESSED_KEY=processed/processed_data.csv \
+            -e BUCKET_NAME=$BUCKET_NAME \
+            -e RAW_KEY=$RAW_KEY \
+            -e PROCESSED_KEY=$PROCESSED_KEY \
             -e LOCALSTACK_ENDPOINT=http://host.docker.internal:4566 \
             etl-image
 
-      - name: Verify output
+      - name: Verify processed file
         run: |
-          aws --endpoint-url=http://localhost:4566 s3 ls s3://etl-demo-bucket/processed/
+          echo "Verifying processed file exists..."
+          aws --endpoint-url=$LOCALSTACK_ENDPOINT s3 ls s3://$BUCKET_NAME/$PROCESSED_KEY
