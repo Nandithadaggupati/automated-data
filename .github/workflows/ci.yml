@@ -1,20 +1,13 @@
 name: CI ETL Test
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:
 
 jobs:
   test-etl:
     runs-on: ubuntu-latest
-    env:
-      BUCKET_NAME: etl-demo-bucket
-      RAW_KEY: raw/raw_data.csv
-      PROCESSED_KEY: processed/processed_data.csv
-      LOCALSTACK_ENDPOINT: http://localhost:4566
 
     services:
       localstack:
@@ -23,59 +16,36 @@ jobs:
           - 4566:4566
         env:
           SERVICES: s3
+          DEBUG: 1
           AWS_DEFAULT_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
         options: >-
-          --health-cmd="curl -f http://localhost:4566/health || exit 1"
+          --health-cmd="curl -f http://localhost:4566/_localstack/health || exit 1"
           --health-interval=10s
           --health-timeout=5s
-          --health-retries=10
+          --health-retries=15
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Wait for LocalStack
-        run: |
-          echo "Waiting for LocalStack to be ready..."
-          for i in {1..30}; do
-            if curl -s $LOCALSTACK_ENDPOINT/health | grep '"s3": "running"'; then
-              echo "LocalStack S3 is ready!"
-              break
-            fi
-            sleep 3
-          done
+        run: sleep 20
 
-      - name: Configure AWS CLI
+      - name: Run ETL script
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ENDPOINT_URL: http://localhost:4566
         run: |
-          aws configure set aws_access_key_id test
-          aws configure set aws_secret_access_key test
-          aws configure set region us-east-1
-
-      - name: Create S3 bucket
-        run: |
-          aws --endpoint-url=$LOCALSTACK_ENDPOINT s3 mb s3://$BUCKET_NAME
-
-      - name: Upload raw data
-        run: |
-          aws --endpoint-url=$LOCALSTACK_ENDPOINT s3 cp raw_data.csv s3://$BUCKET_NAME/$RAW_KEY
-
-      - name: Build ETL Docker image
-        run: docker build -t etl-image .
-
-      - name: Run ETL container
-        run: |
-          docker run --rm \
-            -e AWS_ACCESS_KEY_ID=test \
-            -e AWS_SECRET_ACCESS_KEY=test \
-            -e AWS_DEFAULT_REGION=us-east-1 \
-            -e BUCKET_NAME=$BUCKET_NAME \
-            -e RAW_KEY=$RAW_KEY \
-            -e PROCESSED_KEY=$PROCESSED_KEY \
-            -e LOCALSTACK_ENDPOINT=http://host.docker.internal:4566 \
-            etl-image
-
-      - name: Verify processed file
-        run: |
-          echo "Verifying processed file exists..."
-          aws --endpoint-url=$LOCALSTACK_ENDPOINT s3 ls s3://$BUCKET_NAME/$PROCESSED_KEY
+          python app/etl.py
