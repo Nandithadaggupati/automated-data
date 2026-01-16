@@ -31,10 +31,10 @@ jobs:
       BUCKET_NAME: etl-demo-bucket
       RAW_KEY: raw/raw_data.csv
       PROCESSED_KEY: processed/processed_data.csv
-      LOCALSTACK_ENDPOINT: http://localhost:4566
+      LOCALSTACK_ENDPOINT: http://localstack:4566
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Terraform
@@ -69,7 +69,7 @@ jobs:
 
       - name: Run ETL container
         run: |
-          docker run --network host \
+          docker run \
             -e BUCKET_NAME=${BUCKET_NAME} \
             -e RAW_KEY=${RAW_KEY} \
             -e PROCESSED_KEY=${PROCESSED_KEY} \
