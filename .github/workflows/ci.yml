@@ -1,8 +1,10 @@
 name: CI LocalStack ETL
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   pull_request:
 
 jobs:
@@ -34,13 +36,22 @@ jobs:
       LOCALSTACK_ENDPOINT: http://localhost:4566
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          terraform_version: 1.9.5
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install awscli
+
+      - name: Wait for LocalStack
+        run: sleep 20
 
       - name: Terraform init
         working-directory: ./terraform
@@ -54,21 +65,12 @@ jobs:
         working-directory: ./terraform
         run: terraform apply -auto-approve
 
-      - name: Install AWS CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y awscli
-
-      - name: Upload raw CSV to S3
-        run: |
-          aws --endpoint-url=${LOCALSTACK_ENDPOINT} s3 mb s3://${BUCKET_NAME} || true
-          aws --endpoint-url=${LOCALSTACK_ENDPOINT} s3 cp raw_data.csv s3://${BUCKET_NAME}/${RAW_KEY}
-
-      - name: Build ETL image
+      - name: Build ETL Docker image
         run: docker build -t etl-app ./app
 
       - name: Run ETL container
         run: |
+          aws --endpoint-url=${LOCALSTACK_ENDPOINT} s3 mb s3://${BUCKET_NAME} || true
           docker run --network host \
             -e BUCKET_NAME=${BUCKET_NAME} \
             -e RAW_KEY=${RAW_KEY} \
