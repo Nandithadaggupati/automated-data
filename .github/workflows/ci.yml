@@ -79,6 +79,14 @@ jobs:
             -e ENDPOINT_URL=${LOCALSTACK_ENDPOINT} \
             etl-app
 
+      - name: Run ETL script
+        run: python app/etl.py
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ENDPOINT_URL: ${LOCALSTACK_ENDPOINT}
+
       - name: Verify processed file exists
         run: |
           aws --endpoint-url=${LOCALSTACK_ENDPOINT} s3 ls s3://${BUCKET_NAME}/${PROCESSED_KEY}
