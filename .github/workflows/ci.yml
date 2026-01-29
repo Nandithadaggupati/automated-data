@@ -29,64 +29,36 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
-      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      LOCALSTACK_ENDPOINT: http://localhost:4566
       BUCKET_NAME: etl-demo-bucket
       RAW_KEY: raw/raw_data.csv
       PROCESSED_KEY: processed/processed_data.csv
-      LOCALSTACK_ENDPOINT: http://localhost:4566
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: "3.10"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install awscli
 
       - name: Wait for LocalStack
         run: sleep 20
 
-      - name: Terraform init
-        working-directory: ./terraform
-        run: terraform init
-
-      - name: Terraform validate
-        working-directory: ./terraform
-        run: terraform validate
-
-      - name: Terraform apply
-        working-directory: ./terraform
-        run: terraform apply -auto-approve
-
-      - name: Build ETL Docker image
-        run: docker build -t etl-app ./app
-
-      - name: Run ETL container
+      - name: Create S3 bucket
         run: |
-          aws --endpoint-url=${LOCALSTACK_ENDPOINT} s3 mb s3://${BUCKET_NAME} || true
-          docker run --network host \
-            -e BUCKET_NAME=${BUCKET_NAME} \
-            -e RAW_KEY=${RAW_KEY} \
-            -e PROCESSED_KEY=${PROCESSED_KEY} \
-            -e AWS_REGION=${AWS_REGION} \
-            -e ENDPOINT_URL=${LOCALSTACK_ENDPOINT} \
-            etl-app
+          aws --endpoint-url=$LOCALSTACK_ENDPOINT s3 mb s3://$BUCKET_NAME || true
 
-      - name: Run ETL script
-        run: python app/etl.py
+      - name: Run ETL
         env:
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_DEFAULT_REGION: us-east-1
-          AWS_ENDPOINT_URL: ${LOCALSTACK_ENDPOINT}
+          AWS_ENDPOINT_URL: http://localhost:4566
+        run: python app/etl.py
 
-      - name: Verify processed file exists
+      - name: Verify output
         run: |
-          aws --endpoint-url=${LOCALSTACK_ENDPOINT} s3 ls s3://${BUCKET_NAME}/${PROCESSED_KEY}
+          aws --endpoint-url=$LOCALSTACK_ENDPOINT s3 ls s3://$BUCKET_NAME/$PROCESSED_KEY
